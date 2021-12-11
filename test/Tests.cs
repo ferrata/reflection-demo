@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using test.Utils;
@@ -12,6 +13,52 @@ namespace test
         {
             var path = Path.Combine(GetOwnDebugDir(), "ReparentResult.dll");
             var code = await IlSpyCmd.DecompileAsync(path);
+            // await Console.Out.WriteLineAsync(code);
+
+            Assert.That(code.Wash(), Is.EqualTo(@"
+using System.Reflection;
+using System.Runtime.Serialization;
+using console;
+
+[assembly: AssemblyVersion(""0.0.0.0"")]
+public class SourceType : PaymentResponseAction
+{
+    [DataMember(Name = ""type"", EmitDefaultValue = false)]
+    public string Type
+    {
+        get
+        {
+            //Error decoding local variables: Signature type sequence must have at least one element.
+            return (string)/*Error near IL_0001: Stack underflow*/;
+        }
+        set
+        {
+        }//Error decoding local variables: Signature type sequence must have at least one element.
+
+    }
+
+    [DataMember(Name = ""ownProperty"", EmitDefaultValue = false)]
+    [My(Property = 100, Field1 = ""fieldValue"")]
+    public string OwnProperty
+    {
+        get
+        {
+            //Error decoding local variables: Signature type sequence must have at least one element.
+            return (string)/*Error near IL_0001: Stack underflow*/;
+        }
+        set
+        {
+        }//Error decoding local variables: Signature type sequence must have at least one element.
+
+    }
+
+    public SourceType()
+        : this()
+    {
+    }//Error decoding local variables: Signature type sequence must have at least one element.
+
+}
+".Wash()));
         }
 
         [Test]

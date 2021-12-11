@@ -1,3 +1,5 @@
+#nullable enable
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -21,9 +23,22 @@ namespace console
         public string Type { get; set; }
     }
 
+    public class MyAttribute : Attribute
+    {
+        public string Field1;
+
+        public int Property { get; set; }
+    }
+
+    [DataContract]
     public class SourceType
     {
-        
+        [DataMember(EmitDefaultValue = false, Name = "type")]
+        public string Type { get; set; } = "source";
+
+        [DataMember(EmitDefaultValue = false, Name = "ownProperty")]
+        [My(Field1 = "fieldValue", Property = 100)]
+        public string OwnProperty { get; set; }
     }
 
     internal static class ReparentBuilder
@@ -78,39 +93,72 @@ namespace console
             return type ?? throw new InvalidOperationException($"Unable to generate a re-parented type for {originalType}.");
         }
 
-        private static CustomAttributeBuilder DefineCustomAttribute(CustomAttributeData customAttributeData)
+        private static IEnumerable<(FieldInfo field, object? value)> CollectFields(
+            CustomAttributeData customAttributeData,
+            IEnumerable<CustomAttributeNamedArgument> namedArguments)
         {
-            // based on https://stackoverflow.com/questions/2365470/using-reflection-emit-to-copy-a-custom-attribute-to-another-method
-            var namedFieldValues = new List<object?>();
-            var fields = new List<FieldInfo>();
-            var constructorArguments = customAttributeData
-                .ConstructorArguments
-                .Select(ctorArg => ctorArg.Value)
-                .ToList();
-
-            if (customAttributeData.NamedArguments.Count > 0)
+            var possibleFields = customAttributeData.AttributeType.GetFields();
+            foreach (var customAttributeNamedArgument in namedArguments)
             {
-                var possibleFields = customAttributeData.GetType().GetFields();
-                foreach (var customAttributeNamedArgument in customAttributeData.NamedArguments)
+                foreach (var fieldInfo in possibleFields)
                 {
-                    foreach (var fieldInfo in possibleFields)
-                    {
-                        if (string.Compare(fieldInfo.Name, customAttributeNamedArgument.MemberInfo.Name,
-                            StringComparison.Ordinal) != 0)
-                            continue;
+                    if (fieldInfo.Name != customAttributeNamedArgument.MemberInfo.Name)
+                        continue;
 
-                        fields.Add(fieldInfo);
-                        namedFieldValues.Add(customAttributeNamedArgument.TypedValue.Value);
-                    }
+                    yield return (fieldInfo, customAttributeNamedArgument.TypedValue.Value);
+                }
+            }
+        }
+
+        private static IEnumerable<(T member, object value)> CollectMembers<T>(
+            T[] members, IEnumerable<CustomAttributeNamedArgument> namedArguments
+        ) where T : MemberInfo
+        {
+            foreach (var namedArgument in namedArguments)
+            foreach (var member in members)
+            {
+                if (member.Name == namedArgument.MemberInfo.Name)
+                {
+                    yield return (member, namedArgument.TypedValue.Value);
+                }
+            }
+        }
+
+        private static CustomAttributeBuilder DefineCustomAttribute(CustomAttributeData attributeData)
+        {
+            // based on https://stackoverflow.com/a/3916313/8607180
+
+            var constructorArguments = attributeData.ConstructorArguments
+                .Select(argument => argument.Value)
+                .ToArray();
+
+            var propertyArguments = new List<PropertyInfo>();
+            var propertyArgumentValues = new List<object>();
+            var fieldArguments = new List<FieldInfo>();
+            var fieldArgumentValues = new List<object>();
+
+            foreach (var argument in attributeData.NamedArguments ?? Array.Empty<CustomAttributeNamedArgument>())
+            {
+                var fieldInfo = argument.MemberInfo as FieldInfo;
+                var propertyInfo = argument.MemberInfo as PropertyInfo;
+
+                if (fieldInfo != null)
+                {
+                    fieldArguments.Add(fieldInfo);
+                    fieldArgumentValues.Add(argument.TypedValue.Value);
+                }
+                else if (propertyInfo != null)
+                {
+                    propertyArguments.Add(propertyInfo);
+                    propertyArgumentValues.Add(argument.TypedValue.Value);
                 }
             }
 
-            return namedFieldValues.Count > 0
-                ? new CustomAttributeBuilder(
-                    customAttributeData.Constructor,
-                    constructorArguments.ToArray(), fields.ToArray(),
-                    namedFieldValues.ToArray())
-                : new CustomAttributeBuilder(customAttributeData.Constructor, constructorArguments.ToArray());
+            return new CustomAttributeBuilder(
+                attributeData.Constructor, constructorArguments,
+                propertyArguments.ToArray(), propertyArgumentValues.ToArray(),
+                fieldArguments.ToArray(), fieldArgumentValues.ToArray()
+            );
         }
     }
 }
