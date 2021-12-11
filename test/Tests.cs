@@ -8,6 +8,13 @@ namespace test
     public class Tests : Fixture
     {
         [Test]
+        public async Task TestReparentBuilderAsync()
+        {
+            var path = Path.Combine(GetOwnDebugDir(), "ReparentResult.dll");
+            var code = await IlSpyCmd.DecompileAsync(path);
+        }
+
+        [Test]
         public async Task TestSwitchCaseBuilderAsync()
         {
             var path = Path.Combine(GetOwnDebugDir(), "SwitchCaseResult.dll");
